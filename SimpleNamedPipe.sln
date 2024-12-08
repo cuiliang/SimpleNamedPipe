@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.12.35521.163
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{738CE46D-1AD8-494F-B0E3-265E9CDE7D3D}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimpleNamedPipe", "src\SimpleNamedPipe\SimpleNamedPipe.csproj", "{F213349B-018A-4614-AA5A-DBB5AA76FBC9}"
 EndProject
@@ -12,6 +15,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PipeServerTest", "Samples\Server\PipeServerTest.csproj", "{7002E185-13AA-49C6-99C6-0D4E595BCD73}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PipeClientTest", "Samples\Client\PipeClientTest.csproj", "{C4E53945-A5C4-4634-8CAE-31D8E1CD8CD2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{6CBDB7EE-D67A-429F-8BFE-1BAE1F98F0BD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimpleNamedPipeTests", "Tests\SimpleNamedPipeTests\SimpleNamedPipeTests.csproj", "{694EBFFE-3834-475B-854D-0C49D5D45FAF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -31,6 +38,10 @@ Global
 		{C4E53945-A5C4-4634-8CAE-31D8E1CD8CD2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C4E53945-A5C4-4634-8CAE-31D8E1CD8CD2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C4E53945-A5C4-4634-8CAE-31D8E1CD8CD2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{694EBFFE-3834-475B-854D-0C49D5D45FAF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{694EBFFE-3834-475B-854D-0C49D5D45FAF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{694EBFFE-3834-475B-854D-0C49D5D45FAF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{694EBFFE-3834-475B-854D-0C49D5D45FAF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -38,5 +49,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{7002E185-13AA-49C6-99C6-0D4E595BCD73} = {6AAECECE-2D96-40DB-ACE7-F81E5688824F}
 		{C4E53945-A5C4-4634-8CAE-31D8E1CD8CD2} = {6AAECECE-2D96-40DB-ACE7-F81E5688824F}
+		{694EBFFE-3834-475B-854D-0C49D5D45FAF} = {6CBDB7EE-D67A-429F-8BFE-1BAE1F98F0BD}
 	EndGlobalSection
 EndGlobal

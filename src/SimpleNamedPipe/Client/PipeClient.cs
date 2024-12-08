@@ -1,10 +1,9 @@
-﻿using SimpleNamedPipe.Encoders;
-using System;
+﻿using System;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SimpleNamedPipe.Client;
+namespace SimpleNamedPipe;
 public class PipeClient : IDisposable
 {
 	// 事件定义

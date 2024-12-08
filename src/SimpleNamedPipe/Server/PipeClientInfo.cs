@@ -1,7 +1,7 @@
 ﻿using System.IO.Pipes;
 using System.Threading;
 
-namespace SimpleNamedPipe.Server;
+namespace SimpleNamedPipe;
 
 
 // 客户端信息类

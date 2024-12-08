@@ -1,6 +1,6 @@
 ﻿
 
-using SimpleNamedPipe.Server;
+using SimpleNamedPipe;
 
 namespace NamedPipeLite
 {
@@ -35,39 +35,29 @@ namespace NamedPipeLite
 					Console.WriteLine("发送出错：" + ex.Message);
 				}
 			};
+
+
+
+
 			// 启动服务器
 			await server.StartAsync();
 
 			// 等待用户输入来停止服务器
 			Console.WriteLine("Press Enter to stop server");
 			Console.ReadLine();
-
 			// 停止服务器
 			await server.StopAsync();
 
-			//         var namedPipeServer = new NamedPipeServer("test");
-			//namedPipeServer.ClientConnected += (sender, e) =>
-			//{
-			//	Console.WriteLine($"Client connected: {e.ClientId}");
-			//};
-			//namedPipeServer.ClientDisconnected += (sender, e) =>
-			//{
-			//	Console.WriteLine($"Client disconnected: {e.ClientId}");
-			//};
-			//namedPipeServer.MessageReceived += (sender, e) =>
-			//{
-			//	Console.WriteLine($"Message received from {e.ClientId}: {e.Message}");
-			//};
-			////Console.WriteLine("Press any key to Start...");
-			////Console.ReadKey();
-			//namedPipeServer.Start();
+			Console.WriteLine("Stopped. Press Enter to start server");
+			Console.ReadLine();
+			
+			await server.StartAsync();
+			Console.WriteLine("Started. Press Enter to stop server");
+			
+			Console.ReadLine();
+			await server.StopAsync();
 
-			//Console.WriteLine("Press any key to Stop...");
-			//Console.ReadKey();
-
-			//namedPipeServer.Stop();
-
-			Console.WriteLine("Press any key to Exit...");
+			Console.WriteLine("Stoped. Press any key to Exit...");
 			Console.ReadKey();
 		}
     }

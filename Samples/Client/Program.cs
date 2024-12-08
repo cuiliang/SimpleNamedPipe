@@ -1,5 +1,5 @@
 ﻿using System.Diagnostics;
-using SimpleNamedPipe.Client;
+using SimpleNamedPipe;
 
 namespace PipeClientTest
 {
@@ -7,12 +7,12 @@ namespace PipeClientTest
 	{
 		static async Task Main(string[] args)
 		{
-			//await TestClientReconnect();
+			await TestClientReconnect();
 
-			for (int i = 0; i < 1; i++)
-			{
-				await TestClient(i);
-			}
+			//for (int i = 0; i < 1; i++)
+			//{
+			//	await TestClient(i);
+			//}
 
 			Console.WriteLine("Bye from main...");
 			//Console.WriteLine("Press any key to exit...");

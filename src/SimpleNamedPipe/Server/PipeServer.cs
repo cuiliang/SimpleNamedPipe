@@ -1,14 +1,13 @@
 ﻿using System;
-using System.IO.Pipes;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
-using SimpleNamedPipe.Encoders;
+using System.Threading;
+using System.Threading.Tasks;
 
-namespace SimpleNamedPipe.Server;
+namespace SimpleNamedPipe;
 
 public class PipeServer : IDisposable
 {
