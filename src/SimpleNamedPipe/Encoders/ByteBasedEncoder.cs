@@ -22,7 +22,7 @@ internal class ByteBasedEncoder : IMessageEncoder
 	private static readonly UTF8Encoding Utf8Encoding = new(false);
 
 
-	public async Task WriteMessageAsync(PipeStream stream, string message)
+	public async Task WriteMessageAsync(PipeStream stream, string message, CancellationToken cancellationToken)
 	{
 		//
 		// 计算消息的UTF8字节长度
@@ -33,15 +33,10 @@ internal class ByteBasedEncoder : IMessageEncoder
 		byte[] buffer = new byte[bufferLen];
 		// 写入消息长度
 		WriteInt32LittleEndian(buffer, byteCount);
-		try
-		{
-			// 直接编码到缓冲区
-			Utf8Encoding.GetBytes(message, 0, message.Length, buffer, sizeof(int));
-			await stream.WriteAsync(buffer, 0, bufferLen);
-		}
-		finally
-		{
-		}
+		// 直接编码到缓冲区
+		Utf8Encoding.GetBytes(message, 0, message.Length, buffer, sizeof(int));
+		await stream.WriteAsync(buffer, 0, bufferLen, cancellationToken);
+		await stream.FlushAsync(cancellationToken);
 #else
 		// 从池中租用足够大的缓冲区
 		byte[] buffer = _arrayPool.Rent(bufferLen);
@@ -51,7 +46,8 @@ internal class ByteBasedEncoder : IMessageEncoder
 		{
 			// 直接编码到缓冲区
 			Utf8Encoding.GetBytes(message, 0, message.Length, buffer, sizeof(int));
-			await stream.WriteAsync(buffer, 0, bufferLen);
+			await stream.WriteAsync(buffer, 0, bufferLen, cancellationToken);
+			await stream.FlushAsync(cancellationToken);
 		}
 		finally
 		{
@@ -91,20 +87,14 @@ internal class ByteBasedEncoder : IMessageEncoder
 
 		// 从共享池租用缓冲区
 		var buffer = new byte[messageLength];
-		try
+		read = await stream.ReadAsync(buffer, 0, messageLength, cancellationToken);
+		if (read < messageLength)
 		{
-			read = await stream.ReadAsync(buffer, 0, messageLength, cancellationToken);
-			if (read < messageLength)
-			{
-				throw new IOException("Connection closed while reading message body");
-			}
+			throw new IOException("Connection closed while reading message body");
+		}
 
-			// 直接解码指定长度
-			return Utf8Encoding.GetString(buffer, 0, messageLength);
-		}
-		finally
-		{
-		}
+		// 直接解码指定长度
+		return Utf8Encoding.GetString(buffer, 0, messageLength);
 #else
 
 		var messageLength = BinaryPrimitives.ReadInt32LittleEndian(lengthBuffer);

@@ -11,6 +11,6 @@ internal interface IMessageEncoder
 	/// </summary>
 	PipeTransmissionMode TransmissionMode { get; }
 
-	Task WriteMessageAsync(PipeStream stream, string message);
+	Task WriteMessageAsync(PipeStream stream, string message, CancellationToken cancellationToken);
 	Task<string> ReadMessageAsync(PipeStream stream, CancellationToken cancellationToken);
 }

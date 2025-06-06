@@ -3,6 +3,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+using System.Buffers;
+
 namespace SimpleNamedPipe;
 
 /// <summary>
@@ -13,33 +15,42 @@ internal class MessageBasedEncoder : IMessageEncoder
 	/// <summary>
 	/// 对应的管道传输模式
 	/// </summary>
+	// CA1416: This type is only available on 'windows' 7.0 and later. PipeTransmissionMode.Message is Windows-specific.
+	// Using this encoder will limit the pipe's cross-platform compatibility.
 #pragma warning disable CA1416
 	public PipeTransmissionMode TransmissionMode => PipeTransmissionMode.Message;
 #pragma warning restore CA1416
 
-	public async Task WriteMessageAsync(PipeStream stream, string message)
+	public async Task WriteMessageAsync(PipeStream stream, string message, CancellationToken cancellationToken)
 	{
 		byte[] buffer = Encoding.UTF8.GetBytes(message);
-		await stream.WriteAsync(buffer, 0, buffer.Length);
-		await stream.FlushAsync();
+		await stream.WriteAsync(buffer, 0, buffer.Length, cancellationToken);
+		await stream.FlushAsync(cancellationToken);
 	}
 
 
 	public async Task<string> ReadMessageAsync(PipeStream stream, CancellationToken cancellationToken)
 	{
-		byte[] buffer = new byte[4096];
+		byte[] buffer = ArrayPool<byte>.Shared.Rent(4096); // Rent buffer from pool
 		var messageBuilder = new StringBuilder();
 
-		do
+		try
 		{
-			int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
-			if (bytesRead == 0) 
-				break; // 连接已关闭
+			do
+			{
+				int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
+				if (bytesRead == 0)
+					break; // 连接已关闭
 
-			messageBuilder.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
+				messageBuilder.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
+			}
+			while (!stream.IsMessageComplete);
 		}
-		while (!stream.IsMessageComplete);
-
+		finally
+		{
+			ArrayPool<byte>.Shared.Return(buffer); // Return buffer to pool
+		}
+		
 		string message = messageBuilder.ToString();
 
 		return message;

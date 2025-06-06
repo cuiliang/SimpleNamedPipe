@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace SimpleNamedPipe;
 
-public class PipeServer : IDisposable
+public class PipeServer : IDisposable, IAsyncDisposable
 {
 	// 事件定义
 	public event EventHandler<ClientConnectedEventArgs>? ClientConnected;
@@ -36,6 +36,10 @@ public class PipeServer : IDisposable
 		_activeClients = new ConcurrentDictionary<int, PipeClientInfo>();
 		_clientCount = 0;
 
+		if (useMessageBasedEncoder && Environment.OSVersion.Platform != PlatformID.Win32NT)
+		{
+			throw new PlatformNotSupportedException("MessageBasedEncoder (PipeTransmissionMode.Message) is only supported on Windows.");
+		}
 		_encoder = useMessageBasedEncoder ? new MessageBasedEncoder() : new ByteBasedEncoder();
 	}
 
@@ -46,8 +50,6 @@ public class PipeServer : IDisposable
 
 		_cancellationTokenSource = new CancellationTokenSource();
 		_listenerTask = ListenForClientsAsync(_cancellationTokenSource.Token);
-
-		await Task.CompletedTask;
 	}
 
 	public async Task StopAsync()
@@ -68,16 +70,17 @@ public class PipeServer : IDisposable
 		}
 
 		// 关闭所有客户端连接
-		foreach (var client in _activeClients)
+		var clientIds = _activeClients.Keys.ToList(); // Create a copy of client IDs
+		foreach (var clientId in clientIds)
 		{
-			await DisconnectClientAsync(client.Key);
+			DisconnectClient(clientId);
 		}
 
-		_activeClients.Clear();
+		_activeClients.Clear(); // Now it's safe to clear
 		_listenerTask = null;
 	}
 
-	public async Task SendMessageAsync(int clientId, string message)
+	public async Task SendMessageAsync(int clientId, string message, CancellationToken cancellationToken = default)
 	{
 		if (string.IsNullOrEmpty(message))
 			throw new ArgumentNullException(nameof(message));
@@ -90,14 +93,14 @@ public class PipeServer : IDisposable
 			throw new IOException("连接已断开。");
 		}
 
-		await clientInfo.SendSemaphore.WaitAsync();
+		await clientInfo.SendSemaphore.WaitAsync(cancellationToken);
 		try
 		{
-			await _encoder.WriteMessageAsync(clientInfo.PipeStream, message);
+			await _encoder.WriteMessageAsync(clientInfo.PipeStream, message, cancellationToken).ConfigureAwait(false);
 		}
 		catch (Exception ex)
 		{
-			await DisconnectClientAsync(clientId);
+			DisconnectClient(clientId);
 			throw new IOException($"Error sending message to client {clientId}", ex);
 		}
 		finally
@@ -106,7 +109,7 @@ public class PipeServer : IDisposable
 		}
 	}
 
-	public async Task BroadcastMessageAsync(string message)
+	public async Task BroadcastMessageAsync(string message, CancellationToken cancellationToken = default)
 	{
 		var disconnectedClients = new ConcurrentBag<int>();
 
@@ -114,10 +117,11 @@ public class PipeServer : IDisposable
 		{
 			try
 			{
-				await SendMessageAsync(client.Key, message);
+				await SendMessageAsync(client.Key, message, cancellationToken).ConfigureAwait(false);
 			}
-			catch
+			catch (Exception ex)
 			{
+				Debug.WriteLine($"Error broadcasting to client {client.Key}: {ex}");
 				disconnectedClients.Add(client.Key);
 			}
 		});
@@ -126,7 +130,7 @@ public class PipeServer : IDisposable
 
 		foreach (var clientId in disconnectedClients)
 		{
-			await DisconnectClientAsync(clientId);
+			DisconnectClient(clientId);
 		}
 	}
 
@@ -146,25 +150,26 @@ public class PipeServer : IDisposable
 					PipeOptions.Asynchronous
 				);
 
-				await pipeServerStream.WaitForConnectionAsync(cancellationToken);
+				await pipeServerStream.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
 
 				int clientId = Interlocked.Increment(ref _clientCount);
 				var clientInfo = new PipeClientInfo(clientId, pipeServerStream);
 				_activeClients.TryAdd(clientId, clientInfo);
 
-				OnClientConnected(new ClientConnectedEventArgs(clientId));
+				OnClientConnected(new ClientConnectedEventArgs(clientInfo));
 
 				// 为每个客户端启动一个处理线程
-				_ = HandleClientCommunicationAsync(clientInfo, cancellationToken);
+				_ = HandleClientCommunicationAsync(clientInfo, cancellationToken).ConfigureAwait(false);
 			}
 			catch (OperationCanceledException)
 			{
 				pipeServerStream?.Dispose();
 				break;
 			}
-			catch (Exception)
+			catch (Exception ex)
 			{
 				pipeServerStream?.Dispose();
+				Debug.WriteLine($"Error in ListenForClientsAsync: {ex}");
 				// 继续监听，不要因为单个客户端的错误而停止服务器
 				await Task.Delay(1000, cancellationToken); // 添加延迟避免过于频繁的重试
 			}
@@ -192,7 +197,7 @@ public class PipeServer : IDisposable
 						continue; // 不触发消息接收事件
 					}
 
-					OnMessageReceived(new MessageReceivedEventArgs(clientInfo.ClientId, message, clientInfo.ClientName));
+					OnMessageReceived(new MessageReceivedEventArgs(clientInfo, message));
 				}
 			}
 		}
@@ -203,15 +208,15 @@ public class PipeServer : IDisposable
 		catch (Exception ex)
 		{
 			// 记录错误但继续运行
-			Debug.WriteLine($"HandleClientCommunicationAsync出错：{ex.Message}");
+			Debug.WriteLine($"HandleClientCommunicationAsync error for client {clientInfo.ClientId}: {ex}");
 		}
 		finally
 		{
-			await DisconnectClientAsync(clientInfo.ClientId);
+			DisconnectClient(clientInfo.ClientId);
 		}
 	}
 
-	private async Task DisconnectClientAsync(int clientId)
+	public void DisconnectClient(int clientId)
 	{
 		if (_activeClients.TryRemove(clientId, out var clientInfo))
 		{
@@ -220,21 +225,16 @@ public class PipeServer : IDisposable
 				if (clientInfo.PipeStream.IsConnected)
 					clientInfo.PipeStream.Disconnect();
 
-#if NETFRAMEWORK
-				clientInfo.PipeStream.Dispose();
-#else
-				await clientInfo.PipeStream.DisposeAsync();
-#endif
+				clientInfo.Dispose(); // Dispose PipeClientInfo (which disposes stream and semaphore)
 
-				OnClientDisconnected(new ClientDisconnectedEventArgs(clientId, clientInfo.ClientName));
+				OnClientDisconnected(new ClientDisconnectedEventArgs(clientInfo));
 			}
-			catch
+			catch (Exception ex)
 			{
+				Debug.WriteLine($"Error disconnecting client {clientId}: {ex}"); // Log full exception
 				// 忽略关闭时的错误
 			}
 		}
-
-		await Task.CompletedTask;
 	}
 
 	protected virtual void OnClientConnected(ClientConnectedEventArgs e)
@@ -265,40 +265,53 @@ public class PipeServer : IDisposable
 
 		if (disposing)
 		{
-			StopAsync().GetAwaiter().GetResult();
-			_cancellationTokenSource?.Dispose();
-
-			foreach (var client in _activeClients.Values)
-			{
-				client.PipeStream.Dispose();
-			}
-
-			_activeClients.Clear();
+			// Block on DisposeAsync() for the sync Dispose() pattern.
+			// This can be problematic in some contexts (e.g. UI thread).
+			// Consumers are encouraged to use DisposeAsync() where possible.
+			DisposeAsync();//.AsTask().GetAwaiter().GetResult();
 		}
 
 		_isDisposed = true;
+	}
+
+	public async ValueTask DisposeAsync()
+	{
+		if (_isDisposed)
+			return;
+
+		await StopAsync(); // StopAsync should handle client disconnections and clearing _activeClients.
+		_cancellationTokenSource?.Dispose();
+
+		// As a safeguard, iterate and dispose any remaining client info objects.
+		// StopAsync should ideally clear _activeClients, making this loop a no-op.
+		foreach (var clientInfo in _activeClients.Values)
+		{
+			clientInfo.Dispose(); 
+		}
+		_activeClients.Clear();
+
+		_isDisposed = true;
+		GC.SuppressFinalize(this);
 	}
 
 	#region Types
 
 
 	// 事件参数类
-	public class ClientConnectedEventArgs(int clientId) : EventArgs
+	public class ClientConnectedEventArgs(PipeClientInfo clientInfo) : EventArgs
 	{
-		public int ClientId { get; } = clientId;
+		public PipeClientInfo ClientInfo { get; } = clientInfo;
 	}
 
-	public class ClientDisconnectedEventArgs(int clientId, string? clientName = null) : EventArgs
+	public class ClientDisconnectedEventArgs(PipeClientInfo clientInfo) : EventArgs
 	{
-		public int ClientId { get; } = clientId;
-		public string? ClientName { get; set; } = clientName;
+		public PipeClientInfo ClientInfo { get; } = clientInfo;
 	}
 
-	public class MessageReceivedEventArgs(int clientId, string message, string? clientName = null) : EventArgs
+	public class MessageReceivedEventArgs(PipeClientInfo clientInfo, string message) : EventArgs
 	{
-		public int ClientId { get; } = clientId;
+		public PipeClientInfo ClientInfo { get; } = clientInfo;
 		public string Message { get; } = message;
-		public string? ClientName { get; } = clientName;
 	}
 
 	#endregion

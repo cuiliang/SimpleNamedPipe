@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace SimpleNamedPipe;
-public class PipeClient : IDisposable
+public class PipeClient : IDisposable, IAsyncDisposable
 {
 	// 事件定义
 	public event EventHandler<ConnectionEventArgs>? Connected;
@@ -43,6 +43,11 @@ public class PipeClient : IDisposable
 		_clientName = clientName;
 		_enableClientName = !string.IsNullOrEmpty(clientName);
 
+		if (useMessageBasedEncoder && Environment.OSVersion.Platform != PlatformID.Win32NT)
+		{
+			throw new PlatformNotSupportedException("MessageBasedEncoder (PipeTransmissionMode.Message) is only supported on Windows.");
+		}
+
 		// 使用信号量来控制连接和发送操作的并发
 		_connectionSemaphore = new SemaphoreSlim(1, 1);
 		_sendSemaphore = new SemaphoreSlim(1, 1);
@@ -61,6 +66,11 @@ public class PipeClient : IDisposable
 	/// <exception cref="InvalidOperationException"></exception>
 	public async Task ConnectAsync(int timeoutMilliseconds = 5000)
 	{
+		if (_isAutoReconnecting)
+		{
+			throw new InvalidOperationException("Cannot manually connect when auto-reconnection is active. Call StopConnectWithAutoReconnection() first or use Dispose() to stop.");
+		}
+
 		await _connectionSemaphore.WaitAsync();
 		try
 		{
@@ -70,10 +80,10 @@ public class PipeClient : IDisposable
 			await ConnectInternalAsync(timeoutMilliseconds, false);
 
 		}
-		catch (TimeoutException)
+		catch (TimeoutException tex)
 		{
 			// 超时未成功。
-			Console.WriteLine("Connection Timeout.");
+			OnError(new ErrorEventArgs("Connection timeout", tex));
 		}
 		finally
 		{
@@ -96,7 +106,7 @@ public class PipeClient : IDisposable
 			{
 				try
 				{
-					await ConnectInternalAsync(Timeout.Infinite, true);
+					await ConnectInternalAsync(Timeout.Infinite, true).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -138,7 +148,7 @@ public class PipeClient : IDisposable
 			// 如果启用了客户端名称功能，发送客户端名称
 			if (_enableClientName && !string.IsNullOrEmpty(_clientName))
 			{
-				await SendMessageInternalAsync($"CLIENTNAME:{_clientName}");
+				await SendMessageInternalAsync($"CLIENTNAME:{_clientName}", _cancellationTokenSource.Token).ConfigureAwait(false);
 			}
 
 			OnConnected(new ConnectionEventArgs("Successfully connected to server"));
@@ -149,7 +159,7 @@ public class PipeClient : IDisposable
 
 			if (waitReceive)
 			{
-				await ReceiveMessagesAsync(_cancellationTokenSource.Token);
+				await ReceiveMessagesAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
 
 			}
 			else
@@ -160,7 +170,7 @@ public class PipeClient : IDisposable
 		catch (Exception ex)
 		{
 			OnError(new ErrorEventArgs("Connection failed", ex));
-			await DisconnectInternalAsync();
+			await DisconnectInternalAsync().ConfigureAwait(false);
 
 			throw;
 			//if (_autoReconnect && !_isDisposed)
@@ -179,7 +189,7 @@ public class PipeClient : IDisposable
 		await _connectionSemaphore.WaitAsync();
 		try
 		{
-			await DisconnectInternalAsync();
+			await DisconnectInternalAsync().ConfigureAwait(false);
 		}
 		finally
 		{
@@ -222,7 +232,7 @@ public class PipeClient : IDisposable
 		{
 			if (_receiveTask != null)
 			{
-				await _receiveTask;
+				await _receiveTask.ConfigureAwait(false);
 				_receiveTask = null;
 			}
 		}
@@ -247,15 +257,15 @@ public class PipeClient : IDisposable
 
 	#region 消息发送与接收
 
-	public async Task SendMessageAsync(string message)
+	public async Task SendMessageAsync(string message, CancellationToken cancellationToken = default)
 	{
 		if (string.IsNullOrEmpty(message))
 			throw new ArgumentNullException(nameof(message));
 
-		await _sendSemaphore.WaitAsync();
+		await _sendSemaphore.WaitAsync(cancellationToken);
 		try
 		{
-			await SendMessageInternalAsync(message);
+			await SendMessageInternalAsync(message, cancellationToken).ConfigureAwait(false);
 		}
 		finally
 		{
@@ -263,19 +273,19 @@ public class PipeClient : IDisposable
 		}
 	}
 
-	private async Task SendMessageInternalAsync(string message)
+	private async Task SendMessageInternalAsync(string message, CancellationToken cancellationToken)
 	{
 		if (!IsConnected)
 			throw new InvalidOperationException("Client is not connected");
 
 		try
 		{
-			await _encoder.WriteMessageAsync(_pipeClient!, message);
+			await _encoder.WriteMessageAsync(_pipeClient!, message, cancellationToken).ConfigureAwait(false);
 		}
 		catch (Exception ex)
 		{
 			OnError(new ErrorEventArgs("Error sending message", ex));
-			await DisconnectAsync();
+			await DisconnectAsync().ConfigureAwait(false);
 			throw;
 		}
 	}
@@ -288,22 +298,24 @@ public class PipeClient : IDisposable
 		{
 			try
 			{
-				string message = await _encoder.ReadMessageAsync(_pipeClient!, cancellationToken);
+				string message = await _encoder.ReadMessageAsync(_pipeClient!, cancellationToken).ConfigureAwait(false);
 
 				if (!string.IsNullOrEmpty(message))
 				{
 					OnMessageReceived(new MessageReceivedEventArgs(message));
 				}
 			}
-			//catch (OperationCanceledException)
-			//{
-			//	break;
-			//}
+			catch (OperationCanceledException)
+			{
+				// This is an expected exception when cancellation is requested (e.g., during disconnect).
+				// Break the loop silently.
+				break;
+			}
 			catch (Exception ex)
 			{
 				OnError(new ErrorEventArgs("Error receiving message", ex));
-				await DisconnectAsync();
-				break;
+				await DisconnectAsync().ConfigureAwait(false); // Attempt to clean up the connection
+				break; // Exit loop after an unhandled error
 			}
 		}
 	}
@@ -354,16 +366,28 @@ public class PipeClient : IDisposable
 
 		if (disposing)
 		{
-			_isDisposed = true;
-			_isAutoReconnecting = false;
-
-			DisconnectAsync().GetAwaiter().GetResult();
-
-			_connectionSemaphore.Dispose();
-			_sendSemaphore.Dispose();
+			// Block on DisposeAsync() for the sync Dispose() pattern.
+			DisposeAsync().AsTask().GetAwaiter().GetResult();
 		}
 
 		_isDisposed = true;
+	}
+
+	public async ValueTask DisposeAsync()
+	{
+		if (_isDisposed)
+			return;
+
+		_isAutoReconnecting = false; // Stop any auto-reconnection attempts
+
+		await DisconnectInternalAsync(); // Disconnects pipe, cancels CTS, awaits receive task
+
+		_connectionSemaphore?.Dispose();
+		_sendSemaphore?.Dispose();
+		// _cancellationTokenSource and _pipeClient are disposed within DisconnectInternalAsync or their lifecycle management
+
+		_isDisposed = true;
+		GC.SuppressFinalize(this);
 	}
 
 	#endregion
