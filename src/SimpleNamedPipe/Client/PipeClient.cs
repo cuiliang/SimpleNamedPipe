@@ -314,7 +314,7 @@ public class PipeClient : IDisposable, IAsyncDisposable
 			catch (Exception ex)
 			{
 				OnError(new ErrorEventArgs("Error receiving message", ex));
-				await DisconnectAsync().ConfigureAwait(false); // Attempt to clean up the connection
+				// await DisconnectAsync().ConfigureAwait(false); // Attempt to clean up the connection
 				break; // Exit loop after an unhandled error
 			}
 		}
