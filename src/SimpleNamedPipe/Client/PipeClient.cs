@@ -112,7 +112,9 @@ public class PipeClient : IDisposable, IAsyncDisposable
 				{
 					OnError(new ErrorEventArgs("Reconnection attempt failed", ex));
 				}
-			}
+
+				await Task.Delay(2000); // 等待2秒后重试连接
+            }
 		});
 	}
 

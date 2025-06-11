@@ -158,9 +158,21 @@ public class PipeServer : IDisposable, IAsyncDisposable
 
 				OnClientConnected(new ClientConnectedEventArgs(clientInfo));
 
-				// 为每个客户端启动一个处理线程
-				_ = HandleClientCommunicationAsync(clientInfo, cancellationToken).ConfigureAwait(false);
-			}
+                // 为每个客户端启动一个处理线程
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await HandleClientCommunicationAsync(clientInfo, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Client handler error: {ex}");
+                    }
+                });
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+            }
 			catch (OperationCanceledException)
 			{
 				pipeServerStream?.Dispose();
@@ -268,7 +280,17 @@ public class PipeServer : IDisposable, IAsyncDisposable
 			// Block on DisposeAsync() for the sync Dispose() pattern.
 			// This can be problematic in some contexts (e.g. UI thread).
 			// Consumers are encouraged to use DisposeAsync() where possible.
-			DisposeAsync();//.AsTask().GetAwaiter().GetResult();
+			Task.Run(async () =>
+			{
+				try
+				{
+				await DisposeAsync();//.AsTask().GetAwaiter().GetResult();
+
+				}catch(Exception ex)
+				{
+					Debug.WriteLine(ex.Message);
+				}
+			});
 		}
 
 		_isDisposed = true;
