@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace SimpleNamedPipe;
 
-internal interface IMessageEncoder
+public interface IMessageEncoder
 {
 	/// <summary>
 	/// 对应的管道传输模式

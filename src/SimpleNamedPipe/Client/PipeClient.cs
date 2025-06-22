@@ -34,7 +34,7 @@ public class PipeClient : IDisposable, IAsyncDisposable
 		string pipeName,
 		string serverName = ".",
 		string? clientName = null,
-		bool useMessageBasedEncoder = false)
+		MessageTransmissionMode transmissionMode = MessageTransmissionMode.ByteBasedBigEndian)
 	{
 		_pipeName = pipeName ?? throw new ArgumentNullException(nameof(pipeName));
 		_serverName = serverName ?? throw new ArgumentNullException(nameof(serverName));
@@ -43,16 +43,12 @@ public class PipeClient : IDisposable, IAsyncDisposable
 		_clientName = clientName;
 		_enableClientName = !string.IsNullOrEmpty(clientName);
 
-		if (useMessageBasedEncoder && Environment.OSVersion.Platform != PlatformID.Win32NT)
-		{
-			throw new PlatformNotSupportedException("MessageBasedEncoder (PipeTransmissionMode.Message) is only supported on Windows.");
-		}
-
 		// 使用信号量来控制连接和发送操作的并发
 		_connectionSemaphore = new SemaphoreSlim(1, 1);
 		_sendSemaphore = new SemaphoreSlim(1, 1);
 
-		_encoder = useMessageBasedEncoder ? new MessageBasedEncoder() : new ByteBasedEncoder();
+		// 使用工厂方法创建编码器
+		_encoder = MessageEncoderFactory.CreateEncoder(transmissionMode);
 	}
 
 	#region 连接与断开

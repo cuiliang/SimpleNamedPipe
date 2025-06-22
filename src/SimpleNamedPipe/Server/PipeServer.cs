@@ -29,18 +29,17 @@ public class PipeServer : IDisposable, IAsyncDisposable
 
 	private readonly IMessageEncoder _encoder;
 
-	public PipeServer(string pipeName, bool enableClientName = false, bool useMessageBasedEncoder = false)
+	public PipeServer(string pipeName, 
+        bool enableClientName = false, 
+        MessageTransmissionMode transmissionMode = MessageTransmissionMode.ByteBasedBigEndian)
 	{
 		_pipeName = pipeName ?? throw new ArgumentNullException(nameof(pipeName));
 		_enableClientName = enableClientName;
 		_activeClients = new ConcurrentDictionary<int, PipeClientInfo>();
 		_clientCount = 0;
 
-		if (useMessageBasedEncoder && Environment.OSVersion.Platform != PlatformID.Win32NT)
-		{
-			throw new PlatformNotSupportedException("MessageBasedEncoder (PipeTransmissionMode.Message) is only supported on Windows.");
-		}
-		_encoder = useMessageBasedEncoder ? new MessageBasedEncoder() : new ByteBasedEncoder();
+		// 使用工厂方法创建编码器
+		_encoder = MessageEncoderFactory.CreateEncoder(transmissionMode);
 	}
 
 	public async Task StartAsync()

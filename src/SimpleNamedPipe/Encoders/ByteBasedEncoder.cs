@@ -20,7 +20,16 @@ internal class ByteBasedEncoder : IMessageEncoder
 	private readonly ArrayPool<byte> _arrayPool = ArrayPool<byte>.Shared;
 #endif
 	private static readonly UTF8Encoding Utf8Encoding = new(false);
+	private readonly bool _isLittleEndian;
 
+	/// <summary>
+	/// 初始化ByteBasedEncoder
+	/// </summary>
+	/// <param name="isLittleEndian">是否使用小端字节序，true为小端，false为大端</param>
+	public ByteBasedEncoder(bool isLittleEndian = true)
+	{
+		_isLittleEndian = isLittleEndian;
+	}
 
 	public async Task WriteMessageAsync(PipeStream stream, string message, CancellationToken cancellationToken)
 	{
@@ -32,7 +41,14 @@ internal class ByteBasedEncoder : IMessageEncoder
 #if NETFRAMEWORK
 		byte[] buffer = new byte[bufferLen];
 		// 写入消息长度
-		WriteInt32LittleEndian(buffer, byteCount);
+		if (_isLittleEndian)
+		{
+			WriteInt32LittleEndian(buffer, byteCount);
+		}
+		else
+		{
+			WriteInt32BigEndian(buffer, byteCount);
+		}
 		// 直接编码到缓冲区
 		Utf8Encoding.GetBytes(message, 0, message.Length, buffer, sizeof(int));
 		await stream.WriteAsync(buffer, 0, bufferLen, cancellationToken);
@@ -41,7 +57,14 @@ internal class ByteBasedEncoder : IMessageEncoder
 		// 从池中租用足够大的缓冲区
 		byte[] buffer = _arrayPool.Rent(bufferLen);
 		// 写入消息长度
-		BinaryPrimitives.WriteInt32LittleEndian(buffer, byteCount);
+		if (_isLittleEndian)
+		{
+			BinaryPrimitives.WriteInt32LittleEndian(buffer, byteCount);
+		}
+		else
+		{
+			BinaryPrimitives.WriteInt32BigEndian(buffer, byteCount);
+		}
 		try
 		{
 			// 直接编码到缓冲区
@@ -56,9 +79,6 @@ internal class ByteBasedEncoder : IMessageEncoder
 		}
 #endif
 	}
-
-
-
 
 	public async Task<string> ReadMessageAsync(PipeStream stream, CancellationToken cancellationToken)
 	{
@@ -75,7 +95,9 @@ internal class ByteBasedEncoder : IMessageEncoder
 		}
 
 #if NETFRAMEWORK
-		var messageLength = ReadInt32LittleEndian(lengthBuffer);
+		var messageLength = _isLittleEndian ? 
+			ReadInt32LittleEndian(lengthBuffer) : 
+			ReadInt32BigEndian(lengthBuffer);
 		if (messageLength <= 0) // 1MB 限制
 		{
 			throw new InvalidDataException($"Invalid message length: {messageLength}");
@@ -97,7 +119,9 @@ internal class ByteBasedEncoder : IMessageEncoder
 		return Utf8Encoding.GetString(buffer, 0, messageLength);
 #else
 
-		var messageLength = BinaryPrimitives.ReadInt32LittleEndian(lengthBuffer);
+		var messageLength = _isLittleEndian ? 
+			BinaryPrimitives.ReadInt32LittleEndian(lengthBuffer) :
+			BinaryPrimitives.ReadInt32BigEndian(lengthBuffer);
 		if (messageLength <= 0) // 1MB 限制
 		{
 			throw new InvalidDataException($"Invalid message length: {messageLength}");
@@ -140,6 +164,16 @@ internal class ByteBasedEncoder : IMessageEncoder
 		       | (buffer[3] << 24);
 	}
 
+	static int ReadInt32BigEndian(byte[] buffer)
+	{
+		if (buffer == null || buffer.Length < 4)
+			throw new ArgumentException("Buffer must have at least 4 bytes.");
+
+		return (buffer[0] << 24)
+		       | (buffer[1] << 16)
+		       | (buffer[2] << 8)
+		       | buffer[3];
+	}
 
 	static void WriteInt32LittleEndian(byte[] buffer, int value)
 	{
@@ -150,6 +184,17 @@ internal class ByteBasedEncoder : IMessageEncoder
 		buffer[1] = (byte)((value >> 8) & 0xFF);
 		buffer[2] = (byte)((value >> 16) & 0xFF);
 		buffer[3] = (byte)((value >> 24) & 0xFF);
+	}
+
+	static void WriteInt32BigEndian(byte[] buffer, int value)
+	{
+		if (buffer == null || buffer.Length < 4)
+			throw new ArgumentException("Buffer must have at least 4 bytes.");
+
+		buffer[0] = (byte)((value >> 24) & 0xFF);
+		buffer[1] = (byte)((value >> 16) & 0xFF);
+		buffer[2] = (byte)((value >> 8) & 0xFF);
+		buffer[3] = (byte)(value & 0xFF);
 	}
 #endif
 
