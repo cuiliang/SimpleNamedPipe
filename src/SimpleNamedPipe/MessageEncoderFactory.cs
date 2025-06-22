@@ -26,6 +26,8 @@ public static class MessageEncoderFactory
             MessageTransmissionMode.MessageBased => new MessageBasedEncoder(),
             MessageTransmissionMode.ByteBasedLittleEndian => new ByteBasedEncoder(isLittleEndian: true),
             MessageTransmissionMode.ByteBasedBigEndian => new ByteBasedEncoder(isLittleEndian: false),
+            MessageTransmissionMode.BinaryFormatterCompatibleLittleEndian => new BinaryFormatterCompatibleEncoder(isLittleEndian: true),
+            MessageTransmissionMode.BinaryFormatterCompatibleBigEndian => new BinaryFormatterCompatibleEncoder(isLittleEndian: false),
             _ => throw new ArgumentOutOfRangeException(nameof(transmissionMode), transmissionMode, "Invalid transmission mode")
         };
     }

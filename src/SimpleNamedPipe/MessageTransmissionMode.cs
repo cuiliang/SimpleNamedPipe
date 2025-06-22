@@ -18,5 +18,15 @@ public enum MessageTransmissionMode
     /// <summary>
     /// 基于字节流的传输模式，使用大端字节序存储消息长度
     /// </summary>
-    ByteBasedBigEndian
+    ByteBasedBigEndian,
+    
+    /// <summary>
+    /// 兼容BinaryFormatter格式的传输模式，使用小端字节序存储消息长度
+    /// </summary>
+    BinaryFormatterCompatibleLittleEndian,
+    
+    /// <summary>
+    /// 兼容BinaryFormatter格式的传输模式，使用大端字节序存储消息长度
+    /// </summary>
+    BinaryFormatterCompatibleBigEndian
 } 
